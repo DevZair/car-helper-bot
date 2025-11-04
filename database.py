@@ -1,5 +1,10 @@
 import sqlite3
 
+def _connect():
+    conn = sqlite3.connect("data/questions.db")
+    conn.row_factory = sqlite3.Row
+    return conn
+
 def init_db():
     conn = sqlite3.connect("data/questions.db")
     cur = conn.cursor()
@@ -48,11 +53,34 @@ def get_answer(question: str):
 
 
 def save_user(name, age, city, chat_id):
-    conn = sqlite3.connect("data/questions.db")
+    conn = _connect()
     cur = conn.cursor()
-    cur.execute("INSERT INTO users (name, age, city, chat_id) VALUES (?, ?, ?, ?)", (name, age, city, chat_id))
+    cur.execute("SELECT id FROM users WHERE chat_id = ?", (chat_id,))
+    row = cur.fetchone()
+    if row:
+        cur.execute(
+            "UPDATE users SET name = ?, age = ?, city = ? WHERE chat_id = ?",
+            (name, age, city, chat_id)
+        )
+        user_id = row["id"]
+    else:
+        cur.execute(
+            "INSERT INTO users (name, age, city, chat_id) VALUES (?, ?, ?, ?)",
+            (name, age, city, chat_id)
+        )
+        user_id = cur.lastrowid
     conn.commit()
     conn.close()
+    return user_id
+
+
+def get_user_by_chat_id(chat_id):
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, age, city, chat_id FROM users WHERE chat_id = ?", (chat_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def save_feedback(question, answer, user_id, liked):
