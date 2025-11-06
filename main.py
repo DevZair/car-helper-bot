@@ -22,7 +22,16 @@ from cars_database import (
     get_all_cars,
 )
 from config import TELEGRAM_BOT_TOKEN
-from database import init_db, get_answer, save_user, get_user_by_chat_id, save_feedback
+from database import (
+    init_db,
+    init_help_db,
+    get_answer,
+    save_user,
+    get_user_by_chat_id,
+    save_feedback,
+    get_help_sections,
+    get_help_section_by_key,
+)
 from ai_module import ask_ollama
 
 logging.basicConfig(filename="logs/bot.log", level=logging.INFO, format="%(asctime)s - %(message)s")
@@ -31,6 +40,7 @@ user_state = {}
 user_info = {}
 filter_info = {}
 ai_sessions = {}
+help_messages = {}
 
 YES_ANSWERS = {"да", "ага", "конечно", "давай", "yes", "y"}
 NO_ANSWERS = {"нет", "неа", "no", "n", "не надо"}
@@ -104,33 +114,54 @@ def category_menu():
             InlineKeyboardButton("🔎 Искать по названию", callback_data="search_name"),
         ],
         [InlineKeyboardButton("💰 Искать по цене", callback_data="search_price")],
+        [InlineKeyboardButton("❓ Помощь при покупке", callback_data="help_menu")],
         [InlineKeyboardButton("🤖 Спросить совет у AI", callback_data="ask_ai")],
     ])
 
 
-def get_ai_session(chat_id: int):
-    session = ai_sessions.get(chat_id)
-    if not session:
-        session = {"history": deque(maxlen=10), "last_suggestions": []}
-        ai_sessions[chat_id] = session
-    return session
+def feedback_keyboard():
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Да 👍", callback_data="feedback|like"),
+            InlineKeyboardButton("Нет 👎", callback_data="feedback|dislike"),
+        ],
+    ])
 
 
-def get_or_load_user(chat_id: int):
-    info = user_info.get(chat_id)
-    if info:
-        return info
-    existing = get_user_by_chat_id(chat_id)
-    if existing:
-        data = {
-            "id": existing["id"],
-            "name": existing["name"],
-            "age": existing["age"],
-            "city": existing["city"],
-        }
-        user_info[chat_id] = data
-        return data
-    return None
+def help_categories_keyboard():
+    sections = get_help_sections()
+    rows = []
+    current_row = []
+    for section in sections:
+        current_row.append(InlineKeyboardButton(section["button"], callback_data=f"help_cat|{section['key']}"))
+        if len(current_row) == 2:
+            rows.append(current_row)
+            current_row = []
+    if current_row:
+        rows.append(current_row)
+    rows.append([InlineKeyboardButton("⬅️ Главное меню", callback_data="main_menu")])
+    return InlineKeyboardMarkup(rows)
+
+
+def help_questions_keyboard(section):
+    buttons = []
+    row = []
+    for idx, _ in enumerate(section["questions"], start=1):
+        row.append(InlineKeyboardButton(str(idx), callback_data=f"help_q|{section['key']}|{idx - 1}"))
+        if len(row) == 5:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("⬅️ Категории", callback_data="help_menu")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def format_help_questions(section):
+    lines = [section["label"], "", "Выбери вопрос по номеру или задай его текстом:"]
+    for idx, item in enumerate(section["questions"], start=1):
+        lines.append(f"{idx}. {item['question']}")
+    return "\n".join(lines)
 
 
 def build_ai_prompt(chat_id: int, question: str):
@@ -228,6 +259,46 @@ def match_cars_from_response(response: str):
     return matches
 
 
+async def clear_help_history(chat_id: int, bot):
+    messages = help_messages.pop(chat_id, [])
+    for message_id in messages:
+        with contextlib.suppress(BadRequest, NetworkError, TimedOut):
+            await bot.delete_message(chat_id, message_id)
+
+
+def get_ai_session(chat_id: int):
+    session = ai_sessions.get(chat_id)
+    if not session:
+        session = {
+            "history": deque(maxlen=10),
+            "last_suggestions": [],
+            "last_feedback": None,
+        }
+        ai_sessions[chat_id] = session
+    else:
+        session.setdefault("history", deque(maxlen=10))
+        session.setdefault("last_suggestions", [])
+        session.setdefault("last_feedback", None)
+    return session
+
+
+def get_or_load_user(chat_id: int):
+    info = user_info.get(chat_id)
+    if info:
+        return info
+    existing = get_user_by_chat_id(chat_id)
+    if existing:
+        data = {
+            "id": existing["id"],
+            "name": existing["name"],
+            "age": existing["age"],
+            "city": existing["city"],
+        }
+        user_info[chat_id] = data
+        return data
+    return None
+
+
 async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -238,16 +309,22 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("Действие не поддерживается", show_alert=True)
         return
 
-    if len(payload) < 2:
-        logging.warning("Повреждённый feedback payload: %s", query.data)
+    action = payload[1] if len(payload) > 1 else None
+    if action not in {"like", "dislike"}:
+        logging.warning("Неизвестный тип feedback: %s", query.data)
         await query.edit_message_text("Спасибо за отзыв! 🙌")
         return
 
-    action = payload[1]
-    question = payload[2] if len(payload) > 2 else ""
-    answer = payload[3] if len(payload) > 3 else ""
-    liked = 1 if action == "like" else 0
+    session = ai_sessions.get(query.from_user.id)
+    entry = session.get("last_feedback") if session else None
+    if not entry:
+        logging.warning("Нет данных последнего ответа для feedback")
+        await query.edit_message_text("Спасибо за отзыв! 🙌")
+        return
 
+    liked = 1 if action == "like" else 0
+    question = entry.get("question", "")
+    answer = entry.get("answer", "")
     user = get_or_load_user(query.from_user.id)
     user_id = user.get("id") if user else None
 
@@ -256,6 +333,9 @@ async def handle_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_feedback(question, answer, user_id, liked)
         except Exception as exc:
             logging.exception("Не удалось сохранить feedback: %s", exc)
+
+    if session:
+        session["last_feedback"] = None
 
     await query.edit_message_text("Спасибо за отзыв! 🙌")
 
@@ -464,6 +544,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if state == "ask_ai":
         if text_lower in STOP_WORDS:
+            await clear_help_history(chat_id, context.bot)
             user_state[chat_id] = None
             ai_sessions.pop(chat_id, None)
             await update.message.reply_text("Возвращаю тебя в главное меню 👇", reply_markup=category_menu())
@@ -472,8 +553,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session = get_ai_session(chat_id)
         history = session["history"]
         history.append(("user", text))
+        await clear_help_history(chat_id, context.bot)
+        stored = get_answer(text)
+        if stored:
+            response = stored["answer"]
+            history.append(("assistant", response))
+            session["last_suggestions"] = []
+            session["last_feedback"] = {"question": text, "answer": response}
+            sent_messages = []
+            msg = await update.message.reply_text(response)
+            sent_messages.append(msg.message_id)
+            feedback_msg = await update.message.reply_text("Понравился наш ответ?", reply_markup=feedback_keyboard())
+            sent_messages.append(feedback_msg.message_id)
+            info_msg = await update.message.reply_text("Можешь задать ещё вопрос или напиши 'стоп', чтобы вернуться в меню.")
+            sent_messages.append(info_msg.message_id)
+            return
+
         prompt = build_ai_prompt(chat_id, text)
         loading_message = await send_loading(update.message)
+        sent_messages = []
         try:
             response = await asyncio.wait_for(
                 asyncio.to_thread(ask_ollama, prompt),
@@ -484,27 +582,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         history.append(("assistant", response))
         suggestions = match_cars_from_response(response)
         session["last_suggestions"] = suggestions
+        session["last_feedback"] = {"question": text, "answer": response}
 
         if loading_message:
             try:
                 await loading_message.edit_text(response)
+                sent_messages.append(loading_message.message_id)
             except (BadRequest, NetworkError, TimedOut):
                 with contextlib.suppress(Exception):
                     await loading_message.delete()
-                await update.message.reply_text(response)
+                msg = await update.message.reply_text(response)
+                sent_messages.append(msg.message_id)
         else:
-            await update.message.reply_text(response)
+            msg = await update.message.reply_text(response)
+            sent_messages.append(msg.message_id)
+
+        feedback_msg = await update.message.reply_text("Понравился наш ответ?", reply_markup=feedback_keyboard())
+        sent_messages.append(feedback_msg.message_id)
+
         if suggestions:
-            await update.message.reply_text("Отправить фотографии этих машин? (да/нет)")
+            prompt_msg = await update.message.reply_text("Отправить фотографии этих машин? (да/нет)")
+            sent_messages.append(prompt_msg.message_id)
             user_state[chat_id] = "ask_ai_confirm"
         else:
-            await update.message.reply_text("Можешь задать ещё вопрос или напиши 'стоп', чтобы вернуться в меню.")
+            info_msg = await update.message.reply_text("Можешь задать ещё вопрос или напиши 'стоп', чтобы вернуться в меню.")
+            sent_messages.append(info_msg.message_id)
+
         return
 
 async def handle_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
+    chat_id = query.from_user.id
+    await clear_help_history(chat_id, context.bot)
 
     if data == "discounted":
         await edit_or_send(query, "⏳ loading...")
@@ -554,19 +665,67 @@ async def handle_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_state[query.from_user.id] = "filter_brand"
         await query.edit_message_text("🏷️ Укажи марку (или напиши 'пропустить'):")
 
+    elif data == "help_menu":
+        await edit_or_send(
+            query,
+            "📘 Помощь при покупке машины. Выбери категорию:",
+            reply_markup=help_categories_keyboard(),
+        )
+
+    elif data == "main_menu":
+        await edit_or_send(query, "Выбери раздел:", reply_markup=category_menu())
+
+    elif data.startswith("help_cat|"):
+        _, key = data.split("|", maxsplit=1)
+        section = get_help_section_by_key(key)
+        if not section:
+            await query.answer("Категория недоступна", show_alert=True)
+            return
+        await edit_or_send(
+            query,
+            format_help_questions(section),
+            reply_markup=help_questions_keyboard(section),
+        )
+
+    elif data.startswith("help_q|"):
+        parts = data.split("|")
+        if len(parts) != 3:
+            await query.answer("Вопрос недоступен", show_alert=True)
+            return
+        key = parts[1]
+        try:
+            index = int(parts[2])
+        except ValueError:
+            await query.answer("Некорректный номер вопроса", show_alert=True)
+            return
+        section = get_help_section_by_key(key)
+        if not section:
+            await query.answer("Категория недоступна", show_alert=True)
+            return
+        questions = section["questions"]
+        if index < 0 or index >= len(questions):
+            await query.answer("Вопрос недоступен", show_alert=True)
+            return
+        qa_item = questions[index]
+        msg = await query.message.reply_text(f"{qa_item['question']}\n\n{qa_item['answer']}")
+        help_messages[chat_id] = [msg.message_id]
+
     elif data == "ask_ai":
         chat_id = query.from_user.id
         user_state[chat_id] = "ask_ai"
         session = get_ai_session(chat_id)
         session["history"].clear()
         session["last_suggestions"] = []
+        session["last_feedback"] = None
         await query.edit_message_text(
-            "🤖 Привет! Я помогу подобрать машину. Расскажи, что важно: бюджет, тип кузова, топливо, задачи. "
+            "🤖 Привет! Расскажи, что тебе важно: бюджет, тип кузова, топливо, назначение. "
+            "Если вопрос уже есть в разделе помощи, отвечу из базы знаний, иначе подберу варианты и смогу показать фото. "
             "Напиши 'стоп', чтобы вернуться в меню."
         )
 
 def main():
     init_db()
+    init_help_db()
     init_cars_db()
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
