@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>CarAdminTab</class>
+ <widget class="QWidget" name="CarAdminTab">
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QTableWidget" name="table">
+     <property name="selectionMode">
+      <enum>QAbstractItemView::SingleSelection</enum>
+     </property>
+     <property name="selectionBehavior">
+      <enum>QAbstractItemView::SelectRows</enum>
+     </property>
+     <property name="editTriggers">
+      <set>QAbstractItemView::NoEditTriggers</set>
+     </property>
+     <property name="columnCount">
+      <number>9</number>
+     </property>
+     <property name="rowCount">
+      <number>0</number>
+     </property>
+     <attribute name="horizontalHeaderStretchLastSection">
+      <bool>true</bool>
+     </attribute>
+     <attribute name="verticalHeaderVisible">
+      <bool>false</bool>
+     </attribute>
+     <column>
+      <property name="text">
+       <string>ID</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Категория</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Бренд</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Модель</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Цена</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Описание</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Изображение</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Характеристики</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Акция</string>
+      </property>
+     </column>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="form_container" native="true">
+     <layout class="QFormLayout" name="formLayout">
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_category">
+        <property name="text">
+         <string>Категория:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="category_input">
+        <property name="editable">
+         <bool>true</bool>
+        </property>
+        <item>
+         <property name="text">
+          <string>Легковой</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Кроссовер</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Грузовой</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Электромобили</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Гибриды</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_brand">
+        <property name="text">
+         <string>Бренд:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLineEdit" name="brand_input"/>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label_model">
+        <property name="text">
+         <string>Модель:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QLineEdit" name="model_input"/>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="label_price">
+        <property name="text">
+         <string>Цена:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QLineEdit" name="price_input"/>
+      </item>
+      <item row="4" column="0">
+       <widget class="QLabel" name="label_description">
+        <property name="text">
+         <string>Описание:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="1">
+       <widget class="QPlainTextEdit" name="description_input">
+        <property name="placeholderText">
+         <string>Короткое описание автомобиля</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="0">
+       <widget class="QLabel" name="label_image">
+        <property name="text">
+         <string>Файл изображения:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="1">
+       <widget class="QLineEdit" name="image_input">
+        <property name="placeholderText">
+         <string>Например: camry.jpg</string>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="0">
+       <widget class="QLabel" name="label_specs">
+        <property name="text">
+         <string>Характеристики:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="1">
+       <widget class="QPlainTextEdit" name="specs_input">
+        <property name="placeholderText">
+         <string>Ключевые характеристики, которые видит пользователь</string>
+        </property>
+       </widget>
+      </item>
+      <item row="7" column="1">
+       <widget class="QCheckBox" name="discount_checkbox">
+        <property name="text">
+         <string>Акционный автомобиль</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="button_row">
+     <item>
+      <widget class="QPushButton" name="add_button">
+       <property name="text">
+        <string>Добавить</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="update_button">
+       <property name="text">
+        <string>Сохранить изменения</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="delete_button">
+       <property name="text">
+        <string>Удалить</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="clear_button">
+       <property name="text">
+        <string>Очистить форму</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="refresh_button">
+       <property name="text">
+        <string>Обновить список</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

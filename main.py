@@ -31,6 +31,7 @@ from database import (
     save_feedback,
     get_help_sections,
     get_help_section_by_key,
+    save_ai_dialog,
 )
 from ai_module import ask_ollama
 
@@ -572,13 +573,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prompt = build_ai_prompt(chat_id, text)
         loading_message = await send_loading(update.message)
         sent_messages = []
+        status = "ok"
+        error_text = None
         try:
             response = await asyncio.wait_for(
                 asyncio.to_thread(ask_ollama, prompt),
                 timeout=AI_RESPONSE_TIMEOUT,
             )
         except asyncio.TimeoutError:
+            status = "timeout"
             response = "AI долго думает. Попробуй задать вопрос ещё раз чуть позже."
+        except Exception as exc:  # noqa: BLE001
+            status = "error"
+            error_text = str(exc)
+            logging.exception("Ошибка при запросе к ИИ: %s", exc)
+            response = "Не удалось получить ответ от ИИ. Попробуй ещё раз позже."
         history.append(("assistant", response))
         suggestions = match_cars_from_response(response)
         session["last_suggestions"] = suggestions
@@ -607,6 +616,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             info_msg = await update.message.reply_text("Можешь задать ещё вопрос или напиши 'стоп', чтобы вернуться в меню.")
             sent_messages.append(info_msg.message_id)
+
+        try:
+            user_id = user_info.get(chat_id, {}).get("id")
+            if user_id is None:
+                db_user = get_user_by_chat_id(chat_id)
+                user_id = db_user["id"] if db_user else None
+            save_ai_dialog(
+                question=text,
+                answer=response,
+                user_id=user_id,
+                prompt=prompt or text,
+                status=status,
+                error=error_text,
+            )
+        except Exception as exc:
+            logging.exception("Не удалось сохранить диалог ИИ: %s", exc)
 
         return
 

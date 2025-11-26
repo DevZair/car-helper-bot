@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>AIDialogsTab</class>
+ <widget class="QWidget" name="AIDialogsTab">
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <layout class="QHBoxLayout" name="control_row">
+     <item>
+      <widget class="QLabel" name="label_search">
+       <property name="text">
+        <string>Поиск:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="search_input">
+       <property name="placeholderText">
+        <string>Поиск по вопросу</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="search_btn">
+       <property name="text">
+        <string>Найти</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="reset_btn">
+       <property name="text">
+        <string>Сбросить</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="refresh_btn">
+       <property name="text">
+        <string>Обновить</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+   <widget class="QTableWidget" name="table">
+     <property name="selectionMode">
+      <enum>QAbstractItemView::SingleSelection</enum>
+     </property>
+     <property name="selectionBehavior">
+      <enum>QAbstractItemView::SelectRows</enum>
+     </property>
+     <property name="editTriggers">
+      <set>QAbstractItemView::NoEditTriggers</set>
+     </property>
+     <property name="columnCount">
+      <number>6</number>
+     </property>
+     <property name="rowCount">
+      <number>0</number>
+     </property>
+     <attribute name="horizontalHeaderStretchLastSection">
+      <bool>true</bool>
+     </attribute>
+     <attribute name="verticalHeaderVisible">
+      <bool>false</bool>
+     </attribute>
+     <column>
+      <property name="text">
+       <string>ID</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>User ID</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Вопрос</string>
+      </property>
+     </column>
+     <column>
+     <property name="text">
+      <string>Ответ</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Статус</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Дата/время</string>
+     </property>
+    </column>
+   </widget>
+  </item>
+   <item>
+    <layout class="QHBoxLayout" name="details_row">
+     <item>
+      <widget class="QPlainTextEdit" name="full_question">
+       <property name="readOnly">
+        <bool>true</bool>
+       </property>
+       <property name="placeholderText">
+        <string>Полный текст вопроса</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPlainTextEdit" name="full_answer">
+       <property name="readOnly">
+        <bool>true</bool>
+       </property>
+       <property name="placeholderText">
+        <string>Полный текст ответа</string>
+       </property>
+     </widget>
+    </item>
+   </layout>
+  </item>
+  <item>
+   <layout class="QVBoxLayout" name="prompt_layout">
+    <item>
+     <widget class="QLabel" name="label_prompt">
+      <property name="text">
+       <string>Промпт, отправленный в ИИ</string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QPlainTextEdit" name="full_prompt">
+      <property name="readOnly">
+       <bool>true</bool>
+      </property>
+      <property name="placeholderText">
+       <string>Текст промпта, который отправили в ИИ</string>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </item>
+   <item>
+    <layout class="QFormLayout" name="formLayout">
+     <item row="0" column="0">
+      <widget class="QLabel" name="label_user_id">
+       <property name="text">
+        <string>User ID:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="QLineEdit" name="new_user_id">
+       <property name="placeholderText">
+        <string>Например: 123456789</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="label_new_question">
+       <property name="text">
+        <string>Вопрос:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QPlainTextEdit" name="new_question"/>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="label_new_answer">
+       <property name="text">
+        <string>Ответ:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <widget class="QPlainTextEdit" name="new_answer"/>
+     </item>
+     <item row="3" column="1">
+      <widget class="QPushButton" name="save_btn">
+       <property name="text">
+        <string>Сохранить тестовый диалог</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

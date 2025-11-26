@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>CategoryDialog</class>
+ <widget class="QDialog" name="CategoryDialog">
+  <property name="windowTitle">
+   <string>Категория помощи</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <layout class="QFormLayout" name="formLayout">
+     <item row="0" column="0">
+      <widget class="QLabel" name="label_key">
+       <property name="text">
+        <string>Ключ:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="QLineEdit" name="key_edit"/>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="label_label">
+       <property name="text">
+        <string>Заголовок:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QLineEdit" name="label_edit"/>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="label_button">
+       <property name="text">
+        <string>Кнопка:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <widget class="QLineEdit" name="button_edit"/>
+     </item>
+     <item row="3" column="0">
+      <widget class="QLabel" name="label_sort">
+       <property name="text">
+        <string>Сортировка:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="1">
+      <widget class="QSpinBox" name="sort_spin">
+       <property name="maximum">
+        <number>10000</number>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="info_label">
+     <property name="text">
+      <string>Ключ используется в callback_data. Должен быть уникальным.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="button_box">
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

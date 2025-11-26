@@ -1,8 +1,10 @@
 import sqlite3
 from pathlib import Path
 
-QUESTIONS_DB_PATH = Path("data/questions.db")
-HELP_DB_PATH = Path("data/help.db")
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+QUESTIONS_DB_PATH = DATA_DIR / "questions.db"
+HELP_DB_PATH = DATA_DIR / "help.db"
 
 
 def _connect():
@@ -17,7 +19,22 @@ def _help_connect():
     return conn
 
 
+def _ensure_column(conn, table: str, column: str, ddl: str, fill_expression: str | None = None):
+    cur = conn.cursor()
+    cur.execute(f"PRAGMA table_info({table})")
+    existing = {row[1] for row in cur.fetchall()}
+    if column not in existing:
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+        conn.commit()
+        if fill_expression:
+            cur.execute(
+                f"UPDATE {table} SET {column} = {fill_expression} WHERE {column} IS NULL"
+            )
+            conn.commit()
+
+
 def init_db():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(QUESTIONS_DB_PATH)
     cur = conn.cursor()
 
@@ -30,6 +47,25 @@ def init_db():
         reaction TEXT
     )
     """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_dialogs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        question TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        prompt TEXT,
+        status TEXT DEFAULT 'ok',
+        error TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    _ensure_column(conn, "ai_dialogs", "prompt", "TEXT")
+    _ensure_column(conn, "ai_dialogs", "status", "TEXT", "'ok'")
+    _ensure_column(conn, "ai_dialogs", "error", "TEXT")
+    _ensure_column(conn, "ai_dialogs", "created_at", "TEXT", "CURRENT_TIMESTAMP")
+    cur.execute("UPDATE ai_dialogs SET status = COALESCE(status, 'ok')")
+    cur.execute("UPDATE ai_dialogs SET prompt = question WHERE prompt IS NULL")
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
@@ -47,7 +83,8 @@ def init_db():
         question TEXT,
         answer TEXT,
         user_id INTEGER,
-        liked INTEGER
+        liked INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
     """)
 
@@ -144,8 +181,22 @@ def save_feedback(question, answer, user_id, liked):
     conn = _connect()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO feedback (question, answer, user_id, liked) VALUES (?, ?, ?, ?)",
+        "INSERT INTO feedback (question, answer, user_id, liked, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
         (question, answer, user_id, liked),
+    )
+    conn.commit()
+    conn.close()
+
+
+def save_ai_dialog(question: str, answer: str, user_id: int | None, *, prompt: str | None = None, status: str | None = None, error: str | None = None):
+    conn = _connect()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO ai_dialogs (user_id, question, answer, prompt, status, error, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+        """,
+        (user_id, question, answer, prompt, status, error),
     )
     conn.commit()
     conn.close()

@@ -1,10 +1,16 @@
 import os
 import sqlite3
+from pathlib import Path
 from typing import Optional
 
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+DB_PATH = DATA_DIR / "cars.db"
+
+
 def init_cars_db():
-    os.makedirs("data", exist_ok=True)
-    conn = sqlite3.connect("data/cars.db")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
     cur.execute("""
@@ -130,7 +136,7 @@ def init_cars_db():
 
 
 def get_cars_by_category(category: str):
-    conn = sqlite3.connect("data/cars.db")
+    conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("SELECT brand, model, price, description, image, specs FROM cars WHERE category = ?", (category,))
     result = cur.fetchall()
@@ -139,7 +145,7 @@ def get_cars_by_category(category: str):
 
 
 def get_discounted_cars():
-    conn = sqlite3.connect("data/cars.db")
+    conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("SELECT brand, model, price, description, image, specs FROM cars WHERE is_discounted = 1")
     result = cur.fetchall()
@@ -148,7 +154,7 @@ def get_discounted_cars():
 
 
 def get_cars_by_filters(brand: Optional[str] = None, model: Optional[str] = None):
-    conn = sqlite3.connect("data/cars.db")
+    conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
     query = "SELECT brand, model, price, description, image, specs FROM cars WHERE 1 = 1"

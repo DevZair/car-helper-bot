@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>AIFeedbackTab</class>
+ <widget class="QWidget" name="AIFeedbackTab">
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <layout class="QHBoxLayout" name="filter_row">
+     <item>
+      <widget class="QPushButton" name="liked_btn">
+       <property name="text">
+        <string>Только понравившиеся</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="disliked_btn">
+       <property name="text">
+        <string>Только не понравившиеся</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="all_btn">
+       <property name="text">
+        <string>Показать все</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="refresh_btn">
+       <property name="text">
+        <string>Обновить</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QTableWidget" name="table">
+     <property name="selectionMode">
+      <enum>QAbstractItemView::SingleSelection</enum>
+     </property>
+     <property name="selectionBehavior">
+      <enum>QAbstractItemView::SelectRows</enum>
+     </property>
+     <property name="editTriggers">
+      <set>QAbstractItemView::NoEditTriggers</set>
+     </property>
+     <property name="columnCount">
+      <number>6</number>
+     </property>
+     <property name="rowCount">
+      <number>0</number>
+     </property>
+     <attribute name="horizontalHeaderStretchLastSection">
+      <bool>true</bool>
+     </attribute>
+     <attribute name="verticalHeaderVisible">
+      <bool>false</bool>
+     </attribute>
+     <column>
+      <property name="text">
+       <string>ID</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>User ID</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Вопрос</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Ответ</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Оценка</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Дата/время</string>
+      </property>
+     </column>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="details_row">
+     <item>
+      <widget class="QPlainTextEdit" name="full_feedback_question">
+       <property name="readOnly">
+        <bool>true</bool>
+       </property>
+       <property name="placeholderText">
+        <string>Вопрос целиком</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPlainTextEdit" name="full_feedback_answer">
+       <property name="readOnly">
+        <bool>true</bool>
+       </property>
+       <property name="placeholderText">
+        <string>Ответ целиком</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="actions_row">
+     <item>
+      <widget class="QPushButton" name="toggle_button">
+       <property name="text">
+        <string>Изменить оценку</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

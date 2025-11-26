@@ -1,10 +1,3 @@
-"""
-PyQt5 based admin panel to manage bot data without touching SQL manually.
-Provides two tabs:
-1. Авто: CRUD for vehicles in data/cars.db.
-2. Помощь/FAQ: CRUD for help categories/questions in data/help.db.
-"""
-
 from __future__ import annotations
 
 import sys
@@ -12,39 +5,29 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
+from PyQt5 import uic
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
-    QCheckBox,
-    QComboBox,
     QDialog,
-    QDialogButtonBox,
-    QFormLayout,
-    QHBoxLayout,
     QHeaderView,
-    QLabel,
-    QLineEdit,
-    QListWidget,
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
-    QPushButton,
-    QPlainTextEdit,
-    QSizePolicy,
-    QSpinBox,
-    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
-    QVBoxLayout,
     QWidget,
 )
 
 from config import ADMIN_LOGIN, ADMIN_PASSWORD
 
 
-DATA_DIR = Path("data")
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+UI_DIR = BASE_DIR / "ui"
 CARS_DB_PATH = DATA_DIR / "cars.db"
 HELP_DB_PATH = DATA_DIR / "help.db"
 QUESTIONS_DB_PATH = DATA_DIR / "questions.db"
@@ -104,6 +87,20 @@ def ensure_help_schema():
     conn.close()
 
 
+def _ensure_column(conn, table: str, column: str, ddl: str, fill_expression: str | None = None):
+    cur = conn.cursor()
+    cur.execute(f"PRAGMA table_info({table})")
+    existing = {row[1] for row in cur.fetchall()}
+    if column not in existing:
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+        conn.commit()
+        if fill_expression:
+            cur.execute(
+                f"UPDATE {table} SET {column} = {fill_expression} WHERE {column} IS NULL"
+            )
+            conn.commit()
+
+
 def ensure_questions_schema():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(QUESTIONS_DB_PATH)
@@ -137,10 +134,33 @@ def ensure_questions_schema():
             question TEXT,
             answer TEXT,
             user_id INTEGER,
-            liked INTEGER
+            liked INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ai_dialogs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            question TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            prompt TEXT,
+            status TEXT DEFAULT 'ok',
+            error TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.commit()
+    _ensure_column(conn, "feedback", "created_at", "TEXT", "CURRENT_TIMESTAMP")
+    _ensure_column(conn, "ai_dialogs", "prompt", "TEXT")
+    _ensure_column(conn, "ai_dialogs", "status", "TEXT", "'ok'")
+    _ensure_column(conn, "ai_dialogs", "error", "TEXT")
+    _ensure_column(conn, "ai_dialogs", "created_at", "TEXT", "CURRENT_TIMESTAMP")
+    cur.execute("UPDATE ai_dialogs SET status = COALESCE(status, 'ok')")
+    cur.execute("UPDATE ai_dialogs SET prompt = question WHERE prompt IS NULL")
     conn.commit()
     conn.close()
 
@@ -148,29 +168,12 @@ def ensure_questions_schema():
 class AdminLoginDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Вход в админ-панель")
-        layout = QVBoxLayout(self)
+        self._setup_ui()
 
-        info = QLabel("Введите логин и пароль, чтобы продолжить.")
-        info.setWordWrap(True)
-        layout.addWidget(info)
-
-        form = QFormLayout()
-        self.login_edit = QLineEdit()
-        self.password_edit = QLineEdit()
-        self.password_edit.setEchoMode(QLineEdit.Password)
-        form.addRow("Логин:", self.login_edit)
-        form.addRow("Пароль:", self.password_edit)
-        layout.addLayout(form)
-
-        self.error_label = QLabel("")
-        self.error_label.setStyleSheet("color: red;")
-        layout.addWidget(self.error_label)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.handle_login)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+    def _setup_ui(self):
+        uic.loadUi(str(UI_DIR / "login_dialog.ui"), self)
+        self.button_box.accepted.connect(self.handle_login)
+        self.button_box.rejected.connect(self.reject)
 
     def handle_login(self):
         login = self.login_edit.text().strip()
@@ -205,9 +208,7 @@ class CarAdminTab(QWidget):
         self.load_cars()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
-
-        self.table = QTableWidget()
+        uic.loadUi(str(UI_DIR / "car_tab.ui"), self)
         self.table.setColumnCount(len(self.headers))
         self.table.setHorizontalHeaderLabels(self.headers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -218,64 +219,12 @@ class CarAdminTab(QWidget):
         header.setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self.populate_form_from_selection)
-        layout.addWidget(self.table, stretch=1)
-
-        form_layout = QFormLayout()
-        self.category_input = QComboBox()
-        self.category_input.setEditable(True)
-        self.category_input.addItems(
-            [
-                "Легковой",
-                "Кроссовер",
-                "Грузовой",
-                "Электромобили",
-                "Гибриды",
-            ]
-        )
-        self.brand_input = QLineEdit()
-        self.model_input = QLineEdit()
-        self.price_input = QLineEdit()
-        self.description_input = QPlainTextEdit()
-        self.description_input.setPlaceholderText("Короткое описание автомобиля")
-        self.image_input = QLineEdit()
-        self.image_input.setPlaceholderText("Например: camry.jpg")
-        self.specs_input = QPlainTextEdit()
-        self.specs_input.setPlaceholderText("Ключевые характеристики, которые видит пользователь")
-        self.discount_checkbox = QCheckBox("Акционный автомобиль")
-
-        form_layout.addRow("Категория:", self.category_input)
-        form_layout.addRow("Бренд:", self.brand_input)
-        form_layout.addRow("Модель:", self.model_input)
-        form_layout.addRow("Цена:", self.price_input)
-        form_layout.addRow("Описание:", self.description_input)
-        form_layout.addRow("Файл изображения:", self.image_input)
-        form_layout.addRow("Характеристики:", self.specs_input)
-        form_layout.addRow("", self.discount_checkbox)
-
-        form_container = QWidget()
-        form_container.setLayout(form_layout)
-        form_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        layout.addWidget(form_container)
-
-        button_row = QHBoxLayout()
-        self.add_button = QPushButton("Добавить")
-        self.update_button = QPushButton("Сохранить изменения")
-        self.delete_button = QPushButton("Удалить")
-        self.clear_button = QPushButton("Очистить форму")
-        self.refresh_button = QPushButton("Обновить список")
 
         self.add_button.clicked.connect(self.add_car)
         self.update_button.clicked.connect(self.update_car)
         self.delete_button.clicked.connect(self.delete_car)
         self.clear_button.clicked.connect(self.clear_form)
         self.refresh_button.clicked.connect(self.load_cars)
-
-        button_row.addWidget(self.add_button)
-        button_row.addWidget(self.update_button)
-        button_row.addWidget(self.delete_button)
-        button_row.addWidget(self.clear_button)
-        button_row.addWidget(self.refresh_button)
-        layout.addLayout(button_row)
 
     def load_cars(self):
         conn = sqlite3.connect(CARS_DB_PATH)
@@ -453,15 +402,7 @@ class CarAdminTab(QWidget):
 class CategoryDialog(QDialog):
     def __init__(self, parent=None, data=None):
         super().__init__(parent)
-        self.setWindowTitle("Категория помощи")
-        layout = QVBoxLayout(self)
-
-        form = QFormLayout()
-        self.key_edit = QLineEdit()
-        self.label_edit = QLineEdit()
-        self.button_edit = QLineEdit()
-        self.sort_spin = QSpinBox()
-        self.sort_spin.setRange(0, 10_000)
+        self._setup_ui()
 
         if data:
             self.key_edit.setText(data.get("key", ""))
@@ -469,20 +410,10 @@ class CategoryDialog(QDialog):
             self.button_edit.setText(data.get("button", ""))
             self.sort_spin.setValue(data.get("sort_index", 0))
 
-        form.addRow("Ключ:", self.key_edit)
-        form.addRow("Заголовок:", self.label_edit)
-        form.addRow("Кнопка:", self.button_edit)
-        form.addRow("Сортировка:", self.sort_spin)
-        layout.addLayout(form)
-
-        info_label = QLabel("Ключ используется в callback_data. Должен быть уникальным.")
-        info_label.setWordWrap(True)
-        layout.addWidget(info_label)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+    def _setup_ui(self):
+        uic.loadUi(str(UI_DIR / "category_dialog.ui"), self)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
 
     def get_data(self):
         key = self.key_edit.text().strip()
@@ -502,29 +433,17 @@ class CategoryDialog(QDialog):
 class QuestionDialog(QDialog):
     def __init__(self, parent=None, data=None):
         super().__init__(parent)
-        self.setWindowTitle("Вопрос раздела")
-        layout = QVBoxLayout(self)
-
-        form = QFormLayout()
-        self.question_edit = QLineEdit()
-        self.answer_edit = QPlainTextEdit()
-        self.sort_spin = QSpinBox()
-        self.sort_spin.setRange(0, 10_000)
+        self._setup_ui()
 
         if data:
             self.question_edit.setText(data.get("question", ""))
             self.answer_edit.setPlainText(data.get("answer", ""))
             self.sort_spin.setValue(data.get("sort_index", 0))
 
-        form.addRow("Вопрос:", self.question_edit)
-        form.addRow("Ответ:", self.answer_edit)
-        form.addRow("Сортировка:", self.sort_spin)
-        layout.addLayout(form)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+    def _setup_ui(self):
+        uic.loadUi(str(UI_DIR / "question_dialog.ui"), self)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
 
     def get_data(self):
         question = self.question_edit.text().strip()
@@ -549,9 +468,7 @@ class UserAdminTab(QWidget):
         self.load_users()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
-
-        self.table = QTableWidget()
+        uic.loadUi(str(UI_DIR / "user_tab.ui"), self)
         self.table.setColumnCount(len(self.headers))
         self.table.setHorizontalHeaderLabels(self.headers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -562,39 +479,12 @@ class UserAdminTab(QWidget):
         header.setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self.populate_form_from_selection)
-        layout.addWidget(self.table, stretch=1)
 
-        form = QFormLayout()
-        self.name_input = QLineEdit()
-        self.age_input = QSpinBox()
-        self.age_input.setRange(0, 120)
-        self.city_input = QLineEdit()
-        self.chat_input = QLineEdit()
-        self.chat_input.setPlaceholderText("ID пользователя в Telegram")
-        form.addRow("Имя:", self.name_input)
-        form.addRow("Возраст:", self.age_input)
-        form.addRow("Город:", self.city_input)
-        form.addRow("Chat ID:", self.chat_input)
-        form_container = QWidget()
-        form_container.setLayout(form)
-        layout.addWidget(form_container)
-
-        button_row = QHBoxLayout()
-        add_btn = QPushButton("Добавить")
-        update_btn = QPushButton("Сохранить изменения")
-        delete_btn = QPushButton("Удалить")
-        clear_btn = QPushButton("Очистить форму")
-        refresh_btn = QPushButton("Обновить список")
-
-        add_btn.clicked.connect(self.add_user)
-        update_btn.clicked.connect(self.update_user)
-        delete_btn.clicked.connect(self.delete_user)
-        clear_btn.clicked.connect(self.clear_form)
-        refresh_btn.clicked.connect(self.load_users)
-
-        for btn in (add_btn, update_btn, delete_btn, clear_btn, refresh_btn):
-            button_row.addWidget(btn)
-        layout.addLayout(button_row)
+        self.add_btn.clicked.connect(self.add_user)
+        self.update_btn.clicked.connect(self.update_user)
+        self.delete_btn.clicked.connect(self.delete_user)
+        self.clear_btn.clicked.connect(self.clear_form)
+        self.refresh_btn.clicked.connect(self.load_users)
 
     def load_users(self):
         conn = sqlite3.connect(QUESTIONS_DB_PATH)
@@ -743,9 +633,7 @@ class QAAdminTab(QWidget):
         self.load_entries()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
-
-        self.table = QTableWidget()
+        uic.loadUi(str(UI_DIR / "qa_tab.ui"), self)
         self.table.setColumnCount(len(self.headers))
         self.table.setHorizontalHeaderLabels(self.headers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -756,33 +644,12 @@ class QAAdminTab(QWidget):
         header.setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self.populate_form_from_selection)
-        layout.addWidget(self.table, stretch=1)
 
-        form = QFormLayout()
-        self.question_input = QLineEdit()
-        self.answer_input = QPlainTextEdit()
-        self.type_input = QLineEdit()
-        self.reaction_input = QLineEdit()
-        form.addRow("Вопрос:", self.question_input)
-        form.addRow("Ответ:", self.answer_input)
-        form.addRow("Тип:", self.type_input)
-        form.addRow("Реакция (emoji):", self.reaction_input)
-        layout.addLayout(form)
-
-        button_row = QHBoxLayout()
-        add_btn = QPushButton("Добавить")
-        update_btn = QPushButton("Сохранить изменения")
-        delete_btn = QPushButton("Удалить")
-        clear_btn = QPushButton("Очистить форму")
-        refresh_btn = QPushButton("Обновить список")
-        add_btn.clicked.connect(self.add_entry)
-        update_btn.clicked.connect(self.update_entry)
-        delete_btn.clicked.connect(self.delete_entry)
-        clear_btn.clicked.connect(self.clear_form)
-        refresh_btn.clicked.connect(self.load_entries)
-        for btn in (add_btn, update_btn, delete_btn, clear_btn, refresh_btn):
-            button_row.addWidget(btn)
-        layout.addLayout(button_row)
+        self.add_btn.clicked.connect(self.add_entry)
+        self.update_btn.clicked.connect(self.update_entry)
+        self.delete_btn.clicked.connect(self.delete_entry)
+        self.clear_btn.clicked.connect(self.clear_form)
+        self.refresh_btn.clicked.connect(self.load_entries)
 
     def load_entries(self):
         conn = sqlite3.connect(QUESTIONS_DB_PATH)
@@ -915,6 +782,262 @@ class QAAdminTab(QWidget):
             self.current_entry_id = None
             self.table.clearSelection()
 
+
+class AIDialogsTab(QWidget):
+    headers = ["ID", "User ID", "Вопрос", "Ответ", "Статус", "Дата/время"]
+
+    def __init__(self):
+        super().__init__()
+        self.current_search: str = ""
+        self._setup_ui()
+        self.load_dialogs()
+
+    def _setup_ui(self):
+        uic.loadUi(str(UI_DIR / "dialogs_tab.ui"), self)
+        self.table.setColumnCount(len(self.headers))
+        self.table.setHorizontalHeaderLabels(self.headers)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SingleSelection)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeToContents)
+        header.setStretchLastSection(True)
+        self.table.verticalHeader().setVisible(False)
+        self.table.itemSelectionChanged.connect(self.populate_details)
+
+        self.search_btn.clicked.connect(self.apply_search)
+        self.reset_btn.clicked.connect(self.reset_search)
+        self.refresh_btn.clicked.connect(self.load_dialogs)
+        self.save_btn.clicked.connect(self.add_dialog)
+
+    def apply_search(self):
+        self.current_search = self.search_input.text().strip()
+        self.load_dialogs()
+
+    def reset_search(self):
+        self.search_input.clear()
+        self.current_search = ""
+        self.load_dialogs()
+
+    def load_dialogs(self):
+        conn = sqlite3.connect(QUESTIONS_DB_PATH)
+        cur = conn.cursor()
+        query = """
+        SELECT id, user_id, question, answer, status, created_at, prompt, error
+        FROM ai_dialogs
+        """
+        params = []
+        if self.current_search:
+            query += " WHERE question LIKE ?"
+            params.append(f"%{self.current_search}%")
+        query += " ORDER BY COALESCE(created_at, '') DESC, id DESC"
+        cur.execute(query, params)
+        rows = cur.fetchall()
+        conn.close()
+
+        self.table.setRowCount(len(rows))
+        for row_idx, row in enumerate(rows):
+            prompt_value = row[6] if len(row) > 6 else ""
+            error_value = row[7] if len(row) > 7 else ""
+            for col_idx in range(len(self.headers)):
+                value = row[col_idx] if col_idx < len(row) else ""
+                raw_value = "" if value is None else str(value)
+                display = raw_value
+                if col_idx in (2, 3) and len(display) > 60:
+                    display = display[:57] + "..."
+                item = QTableWidgetItem(display)
+                if col_idx == 0:
+                    item.setData(Qt.UserRole, row[0])
+                if col_idx in (2, 3):
+                    item.setData(Qt.UserRole + 1, raw_value)
+                if col_idx == 0:
+                    item.setData(Qt.UserRole + 2, prompt_value)  # prompt
+                    item.setData(Qt.UserRole + 3, error_value)  # error
+                self.table.setItem(row_idx, col_idx, item)
+        self.table.resizeRowsToContents()
+        self.table.clearSelection()
+        self.full_question.clear()
+        self.full_answer.clear()
+        self.full_prompt.clear()
+
+    def populate_details(self):
+        selected = self.table.selectedItems()
+        if not selected:
+            return
+        row = selected[0].row()
+        question_item = self.table.item(row, 2)
+        answer_item = self.table.item(row, 3)
+        id_item = self.table.item(row, 0)
+        question_text = ""
+        answer_text = ""
+        prompt_text = ""
+        if question_item:
+            question_text = question_item.data(Qt.UserRole + 1) or question_item.text()
+        if answer_item:
+            answer_text = answer_item.data(Qt.UserRole + 1) or answer_item.text()
+        if id_item:
+            prompt_text = id_item.data(Qt.UserRole + 2) or ""
+            error_text = id_item.data(Qt.UserRole + 3)
+            if error_text:
+                prompt_text = f"{prompt_text}\n\n---\nОшибка: {error_text}"
+        if not prompt_text:
+            prompt_text = "Промпт не сохранён (старый диалог)"
+        self.full_question.setPlainText(question_text)
+        self.full_answer.setPlainText(answer_text)
+        self.full_prompt.setPlainText(prompt_text)
+
+    def add_dialog(self):
+        question = self.new_question.toPlainText().strip()
+        answer = self.new_answer.toPlainText().strip()
+        if not question or not answer:
+            QMessageBox.warning(self, "Недостаточно данных", "Нужны и вопрос, и ответ.")
+            return
+        user_id_text = self.new_user_id.text().strip()
+        user_id = None
+        if user_id_text:
+            try:
+                user_id = int(user_id_text)
+            except ValueError:
+                QMessageBox.warning(self, "Некорректный User ID", "User ID должен быть числом.")
+                return
+        conn = sqlite3.connect(QUESTIONS_DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO ai_dialogs (user_id, question, answer, prompt, status, created_at)
+            VALUES (?, ?, ?, ?, 'manual', CURRENT_TIMESTAMP)
+            """,
+            (user_id, question, answer, question),
+        )
+        conn.commit()
+        conn.close()
+        QMessageBox.information(self, "Готово", "Диалог добавлен.")
+        self.new_question.clear()
+        self.new_answer.clear()
+        self.new_user_id.clear()
+        self.load_dialogs()
+
+
+class AIFeedbackTab(QWidget):
+    headers = ["ID", "User ID", "Вопрос", "Ответ", "Оценка", "Дата/время"]
+
+    def __init__(self):
+        super().__init__()
+        self.current_filter: Optional[int] = None
+        self.current_feedback_id: Optional[int] = None
+        self._setup_ui()
+        self.load_feedback()
+
+    def _setup_ui(self):
+        uic.loadUi(str(UI_DIR / "feedback_tab.ui"), self)
+        self.table.setColumnCount(len(self.headers))
+        self.table.setHorizontalHeaderLabels(self.headers)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SingleSelection)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeToContents)
+        header.setStretchLastSection(True)
+        self.table.verticalHeader().setVisible(False)
+        self.table.itemSelectionChanged.connect(self.populate_details)
+
+        self.liked_btn.clicked.connect(lambda: self.apply_filter(1))
+        self.disliked_btn.clicked.connect(lambda: self.apply_filter(0))
+        self.all_btn.clicked.connect(lambda: self.apply_filter(None))
+        self.refresh_btn.clicked.connect(self.load_feedback)
+        self.toggle_button.clicked.connect(self.toggle_feedback)
+
+    def apply_filter(self, value: Optional[int]):
+        self.current_filter = value
+        self.load_feedback()
+
+    def load_feedback(self):
+        conn = sqlite3.connect(QUESTIONS_DB_PATH)
+        cur = conn.cursor()
+        query = "SELECT id, user_id, question, answer, liked, created_at FROM feedback"
+        params = []
+        if self.current_filter is not None:
+            query += " WHERE liked = ?"
+            params.append(self.current_filter)
+        query += " ORDER BY COALESCE(created_at, '') DESC, id DESC"
+        cur.execute(query, params)
+        rows = cur.fetchall()
+        conn.close()
+
+        self.table.setRowCount(len(rows))
+        for row_idx, row in enumerate(rows):
+            for col_idx, value in enumerate(row):
+                if col_idx == 4:
+                    liked = 1 if value else 0
+                    text = "👍" if liked else "👎"
+                    item = QTableWidgetItem(text)
+                    color = QColor("green") if liked else QColor("red")
+                    item.setForeground(color)
+                    item.setData(Qt.UserRole + 2, liked)
+                else:
+                    raw_value = "" if value is None else str(value)
+                    display = raw_value
+                    if col_idx in (2, 3) and len(display) > 60:
+                        display = display[:57] + "..."
+                    item = QTableWidgetItem(display)
+                    if col_idx in (2, 3):
+                        item.setData(Qt.UserRole + 1, raw_value)
+                if col_idx == 0:
+                    item.setData(Qt.UserRole, row[0])
+                self.table.setItem(row_idx, col_idx, item)
+        self.table.resizeRowsToContents()
+        self.table.clearSelection()
+        self.current_feedback_id = None
+        self.full_feedback_question.clear()
+        self.full_feedback_answer.clear()
+
+    def populate_details(self):
+        selected = self.table.selectedItems()
+        if not selected:
+            self.current_feedback_id = None
+            return
+        row = selected[0].row()
+        id_item = self.table.item(row, 0)
+        if not id_item:
+            self.current_feedback_id = None
+            return
+        raw_id = id_item.data(Qt.UserRole) or id_item.text()
+        try:
+            self.current_feedback_id = int(raw_id)
+        except (TypeError, ValueError):
+            self.current_feedback_id = None
+            return
+
+        def _text(col):
+            cell = self.table.item(row, col)
+            if not cell:
+                return ""
+            return cell.data(Qt.UserRole + 1) or cell.text()
+
+        self.full_feedback_question.setPlainText(_text(2))
+        self.full_feedback_answer.setPlainText(_text(3))
+
+    def toggle_feedback(self):
+        if self.current_feedback_id is None:
+            QMessageBox.information(self, "Не выбрано", "Выберите запись для изменения.")
+            return
+        conn = sqlite3.connect(QUESTIONS_DB_PATH)
+        cur = conn.cursor()
+        cur.execute("SELECT liked FROM feedback WHERE id = ?", (self.current_feedback_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            QMessageBox.warning(self, "Ошибка", "Запись не найдена.")
+            return
+        current = 1 if row[0] else 0
+        new_value = 0 if current else 1
+        cur.execute(
+            "UPDATE feedback SET liked = ? WHERE id = ?",
+            (new_value, self.current_feedback_id),
+        )
+        conn.commit()
+        conn.close()
+        self.load_feedback()
 class HelpAdminTab(QWidget):
     question_headers = ["ID", "Вопрос", "Ответ", "Сортировка"]
 
@@ -925,36 +1048,8 @@ class HelpAdminTab(QWidget):
         self.load_categories()
 
     def _setup_ui(self):
-        layout = QHBoxLayout(self)
-        splitter = QSplitter()
-        layout.addWidget(splitter)
-
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        self.category_list = QListWidget()
+        uic.loadUi(str(UI_DIR / "help_tab.ui"), self)
         self.category_list.itemSelectionChanged.connect(self.on_category_selected)
-        left_layout.addWidget(QLabel("Разделы помощи"))
-        left_layout.addWidget(self.category_list, stretch=1)
-
-        cat_button_row = QHBoxLayout()
-        add_cat_btn = QPushButton("Добавить")
-        edit_cat_btn = QPushButton("Изменить")
-        delete_cat_btn = QPushButton("Удалить")
-        add_cat_btn.clicked.connect(self.add_category)
-        edit_cat_btn.clicked.connect(self.edit_category)
-        delete_cat_btn.clicked.connect(self.delete_category)
-        cat_button_row.addWidget(add_cat_btn)
-        cat_button_row.addWidget(edit_cat_btn)
-        cat_button_row.addWidget(delete_cat_btn)
-        left_layout.addLayout(cat_button_row)
-
-        splitter.addWidget(left_panel)
-
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.addWidget(QLabel("Вопросы выбранного раздела"))
-
-        self.questions_table = QTableWidget()
         self.questions_table.setColumnCount(len(self.question_headers))
         self.questions_table.setHorizontalHeaderLabels(self.question_headers)
         self.questions_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -964,22 +1059,14 @@ class HelpAdminTab(QWidget):
         header.setSectionResizeMode(QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
         self.questions_table.verticalHeader().setVisible(False)
-        right_layout.addWidget(self.questions_table, stretch=1)
+        self.splitter.setSizes([250, 600])
 
-        q_button_row = QHBoxLayout()
-        add_q_btn = QPushButton("Добавить вопрос")
-        edit_q_btn = QPushButton("Изменить")
-        delete_q_btn = QPushButton("Удалить")
-        add_q_btn.clicked.connect(self.add_question)
-        edit_q_btn.clicked.connect(self.edit_question)
-        delete_q_btn.clicked.connect(self.delete_question)
-        q_button_row.addWidget(add_q_btn)
-        q_button_row.addWidget(edit_q_btn)
-        q_button_row.addWidget(delete_q_btn)
-        right_layout.addLayout(q_button_row)
-
-        splitter.addWidget(right_panel)
-        splitter.setSizes([250, 600])
+        self.add_cat_btn.clicked.connect(self.add_category)
+        self.edit_cat_btn.clicked.connect(self.edit_category)
+        self.delete_cat_btn.clicked.connect(self.delete_category)
+        self.add_q_btn.clicked.connect(self.add_question)
+        self.edit_q_btn.clicked.connect(self.edit_question)
+        self.delete_q_btn.clicked.connect(self.delete_question)
 
     def load_categories(self):
         conn = sqlite3.connect(HELP_DB_PATH)
@@ -1225,24 +1312,45 @@ class AdminWindow(QMainWindow):
         super().__init__()
         self.logout_callback = logout_callback
         self.setWindowTitle("Car Helper Admin")
-        tabs = QTabWidget()
-        tabs.addTab(CarAdminTab(), "Авто")
-        tabs.addTab(HelpAdminTab(), "Помощь / FAQ")
-        tabs.addTab(UserAdminTab(), "Пользователи")
-        tabs.addTab(QAAdminTab(), "База ответов")
-        self.setCentralWidget(tabs)
+        self.tabs = QTabWidget()
+        self.car_tab = CarAdminTab()
+        self.help_tab = HelpAdminTab()
+        self.users_tab = UserAdminTab()
+        self.qa_tab = QAAdminTab()
+        self.dialogs_tab = AIDialogsTab()
+        self.ai_feedback_tab = AIFeedbackTab()
+        self.tabs.addTab(self.car_tab, "Авто")
+        self.tabs.addTab(self.help_tab, "Помощь / FAQ")
+        self.tabs.addTab(self.users_tab, "Пользователи")
+        self.tabs.addTab(self.qa_tab, "База ответов")
+        self.tabs.addTab(self.dialogs_tab, "Диалоги с ИИ")
+        self.tabs.addTab(self.ai_feedback_tab, "Оценки ответов ИИ")
+        self.setCentralWidget(self.tabs)
         self.resize(1200, 800)
         self._setup_menu()
 
     def _setup_menu(self):
-        menu = self.menuBar().addMenu("Сессия")
+        session_menu = self.menuBar().addMenu("Сессия")
         logout_action = QAction("Выйти", self)
         logout_action.triggered.connect(self._handle_logout)
-        menu.addAction(logout_action)
+        session_menu.addAction(logout_action)
+
+        sections_menu = self.menuBar().addMenu("Разделы")
+        dialogs_action = QAction("Диалоги с ИИ", self)
+        dialogs_action.triggered.connect(lambda: self._open_tab(self.dialogs_tab))
+        feedback_action = QAction("Оценки ответов ИИ", self)
+        feedback_action.triggered.connect(lambda: self._open_tab(self.ai_feedback_tab))
+        sections_menu.addAction(dialogs_action)
+        sections_menu.addAction(feedback_action)
 
     def _handle_logout(self):
         if self.logout_callback:
             self.logout_callback()
+
+    def _open_tab(self, widget: QWidget):
+        index = self.tabs.indexOf(widget)
+        if index != -1:
+            self.tabs.setCurrentIndex(index)
 
 
 def main():
